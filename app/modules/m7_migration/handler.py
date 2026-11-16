@@ -58,6 +58,12 @@ def export_refs():
     return _csv(service.refs_csv_text(run), "fieldmap-refs.csv")
 
 
+@router.get("/api/export/dispositions.csv")
+def export_dispositions():
+    run = service.latest_or_404()
+    return _csv(service.dispositions_csv_text(run), "fieldmap-dispositions.csv")
+
+
 @router.get("/api/export/ledger.csv")
 def export_ledger():
     run = service.latest_or_404()

@@ -29,7 +29,8 @@ def mapping_page(request: Request):
 def mapping_api():
     run = store.latest_run()
     if not run:
-        return {"run_id": None, "rows": [], "stats": {}, "aliases": []}
+        return {"run_id": None, "rows": [], "stats": {}, "aliases": [],
+                "dispositions": {"rows": [], "summary": {}}}
     payload = run.get("mapping") or {}
     return {
         "run_id": run["run_id"],
@@ -39,4 +40,18 @@ def mapping_api():
         "conflicts": payload.get("conflicts") or [],
         "added": payload.get("added") or [],
         "deleted": payload.get("deleted") or [],
+        "dispositions": run.get("dispositions") or {"rows": [], "summary": {}},
+    }
+
+
+@router.get("/api/dispositions")
+def dispositions_api():
+    """消费方处置：每个下游能否继续用旧名、何时改接、何时停下。"""
+    run = store.latest_run()
+    if not run:
+        return {"run_id": None, "rows": [], "summary": {}}
+    return {
+        "run_id": run["run_id"],
+        "rows": (run.get("dispositions") or {}).get("rows") or [],
+        "summary": (run.get("dispositions") or {}).get("summary") or {},
     }

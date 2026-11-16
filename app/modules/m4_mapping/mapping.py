@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.modules.m4_mapping import rename, sqlalias
+from app.modules.m4_mapping import reoccupancy, rename, sqlalias
 
 CONFLICT_PRIMARY = "MAPPING_CONFLICT"
 
@@ -109,12 +109,17 @@ def _merge_conflicts(rows: list[dict]) -> list[dict]:
 
 
 def resolve_refs(consumers: list[dict], fields_old: list[dict],
-                 fields_new: list[dict], edges: dict[str, set[str]]) -> dict:
+                 fields_new: list[dict], edges: dict[str, set[str]],
+                 version_owners: list[dict] | None = None) -> dict:
     """把下游写的旧名字解析到新字段上。
 
     解析必须过身份：先看这个名字在旧版本里是谁，再按 field_id 找到新版本里的它。
     名字还在、但已经换了身份的，一律算断链，不能悄悄绑到新列上。
+    连续两次改名时，过渡列名可能被别的身份占用：链上任意一跳身份不一致，
+    整条多跳别名都判断链，老报表不会被悄悄接到新字段。
+    version_owners 是按版本排列的 (表,列名)->field_id 索引，用于链上身份核验。
     """
+    version_owners = version_owners or []
     old_index = {(field["table"].lower(), field["name"].lower()): field
                  for field in fields_old}
     new_by_id = {field["field_id"]: field for field in fields_new}
@@ -136,6 +141,7 @@ def resolve_refs(consumers: list[dict], fields_old: list[dict],
             field = None
             via = "direct"
             detail = ""
+            reason_code = None
             old_field = old_index.get(key)
             if old_field is not None:
                 target = new_by_id.get(old_field["field_id"])
@@ -144,26 +150,54 @@ def resolve_refs(consumers: list[dict], fields_old: list[dict],
                     via = "direct"
                     direct_count += 1
                 elif target is not None:
-                    chain = rename.resolve(edges, table, column)
-                    if (not chain["cycle"]
-                            and chain["canonical"].lower() == target["name"].lower()):
-                        field = target
-                        via = "alias"
+                    # 旧名在新版本里仍存在，却已经属于别的身份：即使同一身份改了名，
+                    # 也不能给它建别名，否则按旧名取数会静默读到新占用者。
+                    if reoccupancy.is_reoccupied(version_owners, table, column,
+                                                  old_field["field_id"]):
+                        via = "rebound"
+                        detail = "过渡列名已被别的身份占用，禁止静默改接"
+                        reason_code = "NAME_REOCCUPIED"
                     else:
-                        via = "unsafe_alias"
-                        detail = "改名同时换类型，别名不安全"
+                        chain = rename.resolve(edges, table, column)
+                        if (not chain["cycle"]
+                                and chain["canonical"].lower() == target["name"].lower()):
+                            field = target
+                            via = "alias"
+                        else:
+                            via = "unsafe_alias"
+                            detail = "改名同时换类型，别名不安全"
                 else:
                     rebound = new_index.get(key)
                     via = "rebound" if rebound is not None else "deleted"
                     detail = ("名字已被别的身份占用" if rebound is not None
                               else "字段已删除")
+                    if rebound is not None:
+                        reason_code = "NAME_REOCCUPIED"
             else:
+                # 本次基线里没有这个名字：可能是更早版本留下的老名字。
+                # 先沿跨版本改名链做身份核验，链上任一名字被别的身份占用，
+                # 都不允许自动改接，避免老报表静默读到新字段。
+                audit = (reoccupancy.chain_identity_audit(edges, table, column,
+                                                          version_owners)
+                         if version_owners else None)
                 chain = rename.resolve(edges, table, column)
                 canonical = chain["canonical"]
                 target = new_index.get((table.lower(), canonical.lower()))
-                if target is not None:
+                if audit is not None and audit["blocked"]:
+                    if audit["reason"] == "NAME_REOCCUPIED":
+                        via = "rebound"
+                        detail = "过渡列名已被别的身份占用，禁止静默改接"
+                    else:
+                        via = "unsafe_alias"
+                        detail = "改名链异常，别名不安全"
+                    reason_code = audit["reason"]
+                elif target is not None and not chain["cycle"]:
                     field = target
-                    via = "cycle" if chain["cycle"] else "alias"
+                    via = "alias"
+                elif target is not None:
+                    via = "cycle"
+                    detail = "别名链成环"
+                    reason_code = "ALIAS_CYCLE"
                 else:
                     via = "unknown_name"
                     detail = "旧版本里没有这个名字"
@@ -178,6 +212,7 @@ def resolve_refs(consumers: list[dict], fields_old: list[dict],
                 "field_id": field["field_id"] if field else None,
                 "new_name": field["name"] if field else None,
                 "detail": detail,
+                "reason": reason_code,
             }
             if field is None:
                 broken.append(item)

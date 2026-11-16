@@ -25,9 +25,10 @@ def test_spec_markdown_has_clauses_and_footnotes(run):
     assert text.startswith(f"# 迁移单 {run['run_id']}")
     for index in range(1, 7):
         assert f"### 3.{index} " in text
-    assert "[^1]" in text and "[^4]" in text
+    assert "[^1]" in text and "[^4]" in text and "[^5]" in text
     assert "## 2 字段账" in text
-    assert "## 6 回滚" in text
+    assert "## 6 消费方处置" in text
+    assert "## 7 回滚" in text
     assert "| 旧版本字段 | 13 |" in text
     assert "| 新版本字段 | 16 |" in text
 
@@ -82,8 +83,14 @@ def test_big_field_id_survives_csv(client):
 def test_refs_csv_marks_broken(run):
     rows = _rows(migration.refs_csv_text(run))
     assert len(rows) == expected.REFS_TOTAL
-    broken = [row for row in rows if row["reason"] == "REF_BROKEN"]
+    broken = [row for row in rows if row["reason"]]
+    # 断链原因可细分：普通断链记 REF_BROKEN，名字被别的身份占用记 NAME_REOCCUPIED
     assert len(broken) == expected.REFS_BROKEN
+    reasons = {row["reason"] for row in broken}
+    assert "REF_BROKEN" in reasons
+    assert "NAME_REOCCUPIED" in reasons
+    rebound = next(row for row in broken if row["column"] == "status")
+    assert rebound["reason"] == "NAME_REOCCUPIED"
     aliased = [row for row in rows if row["via"] == "alias"]
     assert len(aliased) == expected.REFS_ALIASED
 

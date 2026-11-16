@@ -54,4 +54,5 @@ def build_manifest(run: dict, created_at: datetime) -> dict:
         "created_at_local": config.to_local_text(created_at),
         "counts": run["ledger"].get("counts", {}),
         "balanced": run["ledger"].get("balanced", {}),
+        "dispositions": (run.get("dispositions") or {}).get("summary", {}),
     }

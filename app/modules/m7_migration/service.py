@@ -29,6 +29,10 @@ def refs_csv_text(run: dict) -> str:
     return csv_out.refs_csv(run)
 
 
+def dispositions_csv_text(run: dict) -> str:
+    return csv_out.dispositions_csv(run)
+
+
 def ledger_csv_text(run: dict) -> str:
     return csv_out.ledger_csv(run.get("ledger") or {})
 

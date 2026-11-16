@@ -1,7 +1,7 @@
 # 深度登记 fieldmap
 
-- 规模：中型（7 个功能模块，76 个文件，65 条测试）
-- 核心规则：字段身份只认 `field_id`；类型兼容按 Decimal 值域 / 刻度 / 精确整数三件套判定；影响面 = 引用身份解析后的反向闭包
+- 规模：中型（7 个功能模块，82 个文件，94 条测试）
+- 核心规则：字段身份只认 `field_id`；类型兼容按 Decimal 值域 / 刻度 / 精确整数三件套判定；影响面 = 引用身份解析后的反向闭包；连续改名后过渡名被占用即断链，消费方按 keep/switch/stop 处置
 - 使用者与工作流：湖仓数据管理员拿到上游新版元数据后，判定 60 个下游视图/任务是否还能跑，并出一份带条款号的迁移单
 
 ## 功能模块
@@ -11,9 +11,9 @@
 | M1 元数据采信 | 采信 DDL 或 JSON 元数据，看逐行诊断与隔离区 | POST /api/schemas/import | `app/modules/m1_intake/handler.py` `app/modules/m1_intake/service.py` `app/modules/m1_intake/reader.py` `app/modules/m1_intake/ddl.py` `app/modules/m1_intake/sheet.py` | `tests/test_m1_intake.py` |
 | M2 类型格 | 查类型格的值域与刻度，或直接比两个类型写法 | GET /api/types | `app/modules/m2_types/handler.py` `app/modules/m2_types/service.py` `app/modules/m2_types/coerce.py` `app/modules/m2_types/range.py` `app/modules/m2_types/lattice.py` | `tests/test_m2_types.py` |
 | M3 兼容判定 | 对一对版本做读者 / 写者两向判定 | POST /api/compat | `app/modules/m3_compat/handler.py` `app/modules/m3_compat/service.py` `app/modules/m3_compat/judge.py` `app/modules/m3_compat/direction.py` `app/modules/m3_compat/priority.py` | `tests/test_m3_compat.py` |
-| M4 字段映射 | 看旧名到新名的映射、别名 SQL、冲突项 | GET /api/mapping | `app/modules/m4_mapping/handler.py` `app/modules/m4_mapping/service.py` `app/modules/m4_mapping/mapping.py` `app/modules/m4_mapping/sqlalias.py` `app/modules/m4_mapping/rename.py` | `tests/test_m4_mapping.py` |
+| M4 字段映射 | 看旧名到新名的映射、别名 SQL、冲突项、消费方处置 | GET /api/mapping、/api/dispositions | `app/modules/m4_mapping/handler.py` `app/modules/m4_mapping/service.py` `app/modules/m4_mapping/mapping.py` `app/modules/m4_mapping/reoccupancy.py` `app/modules/m4_mapping/disposition.py` `app/modules/m4_mapping/sqlalias.py` `app/modules/m4_mapping/rename.py` | `tests/test_m4_mapping.py` `tests/test_trap23_reoccupancy.py` |
 | M5 影响面 | 看受影响的下游节点、环、断链、单边登记 | GET /api/impact | `app/modules/m5_impact/handler.py` `app/modules/m5_impact/service.py` `app/modules/m5_impact/closure.py` `app/modules/m5_impact/cycle.py` `app/modules/m5_impact/broken.py` | `tests/test_m5_impact.py` |
-| M6 版本批次 | 跑批次、看历史、验陈旧拒绝与区间重叠 | POST /api/runs | `app/modules/m6_batches/handler.py` `app/modules/m6_batches/service.py` `app/modules/m6_batches/window.py` `app/modules/m6_batches/guard.py` `app/modules/m6_batches/history.py` | `tests/test_m6_batches.py` |
+| M6 版本批次 | 跑批次、看历史、验陈旧拒绝与区间重叠、发布中断保留旧版 | POST /api/runs | `app/modules/m6_batches/handler.py` `app/modules/m6_batches/service.py` `app/modules/m6_batches/window.py` `app/modules/m6_batches/guard.py` `app/modules/m6_batches/publish.py` `app/modules/m6_batches/history.py` | `tests/test_m6_batches.py` `tests/test_trap23_reoccupancy.py` |
 | M7 迁移单 | 出带条款号的迁移单与三份账目 CSV | GET /api/export/spec.md | `app/modules/m7_migration/handler.py` `app/modules/m7_migration/service.py` `app/modules/m7_migration/spec_md.py` `app/modules/m7_migration/csv_out.py` `app/modules/m7_migration/ledger.py` | `tests/test_m7_migration.py` |
 
 ## 陷阱登记
@@ -28,6 +28,7 @@
 | TRAP-20 | 下游依赖成环、节点指向自己 | 递归爆栈或静默截断 | 三色 DFS，自引用单列一类 | `app/modules/m5_impact/cycle.py` | `tests/test_m5_impact.py::test_trap20_cycle_and_self_loop` |
 | TRAP-21 | 上下游只登记一边 | 只查单向，另一半关系漏报 | 双向核验，缺边清单逐条列出 | `app/modules/m5_impact/broken.py` | `tests/test_m5_impact.py::test_trap21_one_sided_registration` |
 | TRAP-22 | 同一字段被连续改过两次名 | 只认最近一跳，最早的名字解析不到 | 跨版本改名链一路解析到底 | `app/modules/m4_mapping/rename.py` | `tests/test_m4_mapping.py::test_trap22_alias_chain_resolves_multi_hop` |
+| TRAP-23 | 连续两次改名后，过渡列名被另一个身份占用 | 按列名顺链解析，老报表被悄悄接到新字段 | 链上逐跳核验名字的 field_id，占用即 `NAME_REOCCUPIED` 断链，并给每个消费方 keep/switch/stop 处置 | `app/modules/m4_mapping/reoccupancy.py` `app/modules/m4_mapping/disposition.py` `app/modules/m4_mapping/mapping.py` | `tests/test_trap23_reoccupancy.py` |
 | TRAP-25 | 两个版本生效区间重叠 | 取到哪版看运气 | 半开区间比较，重叠直接标记警告 | `app/modules/m6_batches/window.py` | `tests/test_m6_batches.py::test_trap25_overlap_flagged_but_adjacent_clean` |
 | TRAP-26 | 基于旧版本号提交 | 后提交无条件覆盖新结果 | 版本号乐观锁，基线落后即 409 | `app/modules/m6_batches/guard.py` | `tests/test_m6_batches.py::test_trap26_stale_submission_rejected` |
 

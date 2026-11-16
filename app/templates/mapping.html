@@ -45,7 +45,47 @@
 </section>
 
 <section class="doc-section">
-  <h2><span class="clause">3</span>冲突与增减</h2>
+  <h2><span class="clause">3</span>消费方处置<sup class="fn">2</sup></h2>
+  {% set dispositions = (run.get('dispositions') or {}).get('rows', []) %}
+  {% set disp_summary = (run.get('dispositions') or {}).get('summary', {}) %}
+  <p class="lede">可留旧名 <span class="mono">{{ disp_summary.keep_old or 0 }}</span>　须改接 <span class="mono">{{ disp_summary.switch or 0 }}</span>　须停下 <span class="mono">{{ disp_summary.stop or 0 }}</span></p>
+  {% if dispositions %}
+  <div class="wrap-scroll">
+    <table>
+      <caption>同一结论同时写进迁移单与处置 CSV</caption>
+      <thead>
+        <tr><th>消费方</th><th>类型</th><th>处置</th><th class="num">引用</th><th class="num">别名</th><th class="num">直连</th><th class="num">阻断</th><th>依据</th></tr>
+      </thead>
+      <tbody>
+        {% for item in dispositions %}
+        <tr>
+          <td class="name">{{ item.consumer }}</td>
+          <td>{{ item.kind }}</td>
+          <td>
+            {% if item.action == 'STOP_REVIEW' %}<span class="st st-bad">停下</span>
+            {% elif item.action == 'SWITCH_TO_CURRENT' %}<span class="st st-warn">改接</span>
+            {% else %}<span class="st st-ok">留旧名</span>{% endif %}
+            <span class="code">{{ item.reason|reason }}</span>
+          </td>
+          <td class="num">{{ item.ref_total }}</td>
+          <td class="num">{{ item.alias_count }}</td>
+          <td class="num">{{ item.direct_count }}</td>
+          <td class="num">{{ item.blocking_count }}</td>
+          <td class="reason">
+            {% for note in item.evidence %}{{ note.ref or '—' }}：{{ note.detail }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">没有消费方登记。</p>
+  {% endif %}
+</section>
+
+<section class="doc-section">
+  <h2><span class="clause">4</span>冲突与增减</h2>
   <div class="split">
     <div>
       <h3>冲突</h3>
@@ -87,6 +127,7 @@
 <aside class="notes">
   <ol class="footnotes">
     <li>改名只按 field_id 认，同名的可能是别人。<a class="back" href="#main">↩</a></li>
+    <li>处置与 /api/export/dispositions.csv、迁移单第 6 节同源；过渡名被别的身份占用即判停下。<a class="back" href="#main">↩</a></li>
   </ol>
 </aside>
 {% endblock %}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from app import config, errors, manifest
-from app.modules.m4_mapping import mapping, rename, sqlalias
+from app.modules.m4_mapping import disposition, mapping, reoccupancy, rename, sqlalias
 
 
 def load_refs(rel_path: str) -> dict:
@@ -66,5 +66,17 @@ def build_mapping(fields_old: list[dict], fields_new: list[dict], diff: dict) ->
 
 
 def resolve(consumers: list[dict], fields_old: list[dict], fields_new: list[dict],
-            graph: dict) -> dict:
-    return mapping.resolve_refs(consumers, fields_old, fields_new, graph)
+            graph: dict, version_owners: list[dict] | None = None) -> dict:
+    return mapping.resolve_refs(consumers, fields_old, fields_new, graph,
+                                version_owners=version_owners)
+
+
+def owner_index(fields: list[dict]) -> dict:
+    """(表, 列名) -> field_id，供跨版本改名链的身份核验。"""
+    return reoccupancy.name_owner_index(fields)
+
+
+def build_dispositions(resolution: dict) -> dict:
+    """消费方处置：每条引用的身份解析汇总成 keep/switch/stop 三档结论。"""
+    rows = disposition.build_dispositions(resolution)
+    return {"rows": rows, "summary": disposition.summarize(rows)}

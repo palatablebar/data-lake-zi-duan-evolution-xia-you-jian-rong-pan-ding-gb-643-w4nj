@@ -9,6 +9,7 @@ FOOTNOTES = [
     "类型放宽指新类型能无损容纳旧类型的全部取值。",
     f"生效区间按 {config.WINDOW_SEMANTICS} 处理。",
     "账目差额应为 0；不为 0 说明判定漏项。",
+    "过渡列名被别的身份占用时，按旧名取数会读到新字段，必须停下人工改接。",
 ]
 
 
@@ -134,11 +135,40 @@ def render(run: dict) -> str:
              ["单边登记", len((run.get("impact") or {}).get("one_sided") or [])]],
         ),
         "",
-        "## 6 回滚",
+        "## 6 消费方处置",
+        "",
+    ])
+    dispositions = (run.get("dispositions") or {}).get("rows") or []
+    if dispositions:
+        parts.append(_md_table(
+            ["消费方", "类型", "处置", "动作码", "原因码", "引用", "别名", "直连", "阻断"],
+            [[row["consumer"], row["kind"], row["label"], row["action"], row["reason"],
+              row["ref_total"], row["alias_count"], row["direct_count"],
+              row["blocking_count"]]
+             for row in dispositions],
+        ))
+        parts.append("")
+        parts.append("处置只认引用身份解析：别名可达的旧名可继续使用，"
+                     "名字被别的身份占用或断链的必须停下，禁止静默改接到当前列名[^5]。")
+        parts.append("")
+        for row in dispositions:
+            for note in row.get("evidence") or []:
+                parts.append(
+                    f"- {row['consumer']} · {note.get('ref') or '—'}："
+                    f"{note.get('detail') or ''}"
+                )
+        parts.append("")
+    else:
+        parts.append("无消费方登记。")
+        parts.append("")
+
+    parts.extend([
+        "## 7 回滚",
         "",
         "1. 按第 4 节建兼容视图，旧名字继续可用。",
         "2. 破坏项逐个补默认值或改类型，再重跑判定。",
         "3. 版本切回上一版，生效区间端点保持半开。",
+        "4. 发布中断时上一份批次与其导出保持完整，重跑同一登记命中批次键、不新增改接记录。",
         "",
     ])
     for index, note in enumerate(FOOTNOTES, start=1):

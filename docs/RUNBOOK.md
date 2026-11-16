@@ -45,14 +45,16 @@ docker compose up -d --build
 | GET | `/api/types` | 类型格与别名表 |
 | POST | `/api/types/compare` | 两个类型写法比较 |
 | POST | `/api/compat` | 一对版本的两向判定 |
-| GET | `/api/mapping` | 映射表、别名、冲突 |
+| GET | `/api/mapping` | 映射表、别名、冲突、消费方处置 |
+| GET | `/api/dispositions` | 每个消费方 keep/switch/stop 处置与依据 |
 | GET | `/api/impact` | 影响面、环、断链 |
-| POST | `/api/runs` | 跑批次，可带基线版本号与生效区间 |
+| POST | `/api/runs` | 跑批次，可带基线版本号、生效区间与 `fail_before_commit` |
 | GET | `/api/batches` | 批次历史 |
 | GET | `/api/reconcile` | 四账对账 |
 | GET | `/api/export/spec.md` | 迁移单 Markdown |
 | GET | `/api/export/fields.csv` | 字段账 CSV |
-| GET | `/api/export/refs.csv` | 引用账 CSV |
+| GET | `/api/export/refs.csv` | 引用账 CSV（含 `NAME_REOCCUPIED` 细分原因） |
+| GET | `/api/export/dispositions.csv` | 消费方处置 CSV，与页面、迁移单同源 |
 | GET | `/api/export/ledger.csv` | 账目 CSV |
 | GET | `/api/export/manifest.json` | 运行清单 |
 
@@ -61,6 +63,7 @@ docker compose up -d --build
 | 现象 | 原因 | 处置 |
 |---|---|---|
 | 409 `VERSION_STALE` | 提交带的基线序号落后 | 去掉 `base_version_seq` 或填当前序号 |
+| 500 `PUBLISH_INTERRUPTED` | 落库前发布中断（演练用 `fail_before_commit`） | 上一份批次与导出未受影响，修正后重新提交，同登记重跑不新增行 |
 | 400 `WINDOW_INVERTED` | 生效区间起点不早于终点 | 检查 `effective_from` / `effective_to` |
 | 400 `BAD_INPUT` | 文件名、参数或 JSON 结构不对 | 看返回的 `detail` |
 | 404 `NOT_FOUND` | 还没跑过批次 | 先在 `/batches` 点「跑一次」 |

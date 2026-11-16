@@ -1,0 +1,33 @@
+{
+  "registered_at": "2026-09-02T03:00:00Z",
+  "consumers": [
+    {
+      "name": "ads.rpt_shipment_legacy",
+      "kind": "view",
+      "sql": "select s.ship_id, s.track_code from dim_shipment s where s.ship_id > 0",
+      "upstream": [],
+      "downstream": []
+    },
+    {
+      "name": "dw.mv_shipment_mid",
+      "kind": "view",
+      "sql": "select s.ship_id, s.tracking_no from dim_shipment s",
+      "upstream": [],
+      "downstream": []
+    },
+    {
+      "name": "dw.task_waybill_current",
+      "kind": "task",
+      "sql": "select s.ship_id, s.waybill_code from dim_shipment s where s.waybill_code is not null",
+      "upstream": [],
+      "downstream": []
+    },
+    {
+      "name": "dw.mv_shipment_city",
+      "kind": "view",
+      "sql": "select s.ship_id, s.dest_city from dim_shipment s",
+      "upstream": [],
+      "downstream": []
+    }
+  ]
+}

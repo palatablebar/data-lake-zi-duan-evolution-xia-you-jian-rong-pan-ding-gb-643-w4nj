@@ -11,7 +11,7 @@ from app.modules.m2_types import service as types
 from app.modules.m3_compat import service as compat
 from app.modules.m4_mapping import service as mapping
 from app.modules.m5_impact import service as impact
-from app.modules.m6_batches import guard, history, window as window_mod
+from app.modules.m6_batches import guard, history, publish, window as window_mod
 from app.modules.m7_migration import service as migration
 
 
@@ -51,10 +51,22 @@ def _edges(old_snapshot: dict, new_snapshot: dict, diff: dict,
     return graph
 
 
+def _version_owners(old_snapshot: dict, new_snapshot: dict,
+                    base_snapshot: dict | None) -> list[dict]:
+    """按版本先后排列的名字->身份索引，用于改名链上的占用核验。"""
+    owners = []
+    if base_snapshot is not None:
+        owners.append(mapping.owner_index(base_snapshot["fields"]))
+    owners.append(mapping.owner_index(old_snapshot["fields"]))
+    owners.append(mapping.owner_index(new_snapshot["fields"]))
+    return owners
+
+
 def execute(old_file: str = config.DEFAULT_OLD, new_file: str = config.DEFAULT_NEW,
             refs_file: str = config.DEFAULT_REFS, base_file: str | None = config.BASE_OLD,
             base_version_seq=None, effective_from: str | None = None,
-            effective_to: str | None = None, params: dict | None = None) -> dict:
+            effective_to: str | None = None, params: dict | None = None,
+            fail_before_commit: bool = False) -> dict:
     params = dict(params or {})
     old_path = config.resolve_sample(old_file)
     new_path = config.resolve_sample(new_file)
@@ -96,8 +108,11 @@ def execute(old_file: str = config.DEFAULT_OLD, new_file: str = config.DEFAULT_N
     ref_counts = _ref_counts(refs["consumers"])
     diff = compat.diff_snapshots(old_snapshot, new_snapshot, ref_counts)
     edges = _edges(old_snapshot, new_snapshot, diff, base_snapshot)
+    version_owners = _version_owners(old_snapshot, new_snapshot, base_snapshot)
     resolution = mapping.resolve(refs["consumers"], old_snapshot["fields"],
-                                 new_snapshot["fields"], edges)
+                                 new_snapshot["fields"], edges,
+                                 version_owners=version_owners)
+    dispositions = mapping.build_dispositions(resolution)
     mapping_table = mapping.build_mapping(old_snapshot["fields"], new_snapshot["fields"], diff)
     impact_payload = impact.build(diff, refs["consumers"], resolution)
     ledger = migration.build_ledger(diff, refs["consumers"], resolution)
@@ -115,7 +130,7 @@ def execute(old_file: str = config.DEFAULT_OLD, new_file: str = config.DEFAULT_N
         "new_schema_id": new_snapshot["schema_id"],
         "version_label_old": old_snapshot["version_label"],
         "version_label_new": new_snapshot["version_label"],
-        "version_seq": store.next_version_seq(),
+        "version_seq": None,
         "input_sha256": input_sha,
         "digests": digests,
         "input_names": names,
@@ -140,6 +155,7 @@ def execute(old_file: str = config.DEFAULT_OLD, new_file: str = config.DEFAULT_N
                  "registered_at": refs["registered_at"], "ref_total": refs["ref_total"],
                  "consumers": refs["consumers"]},
         "resolution": _json_safe(resolution),
+        "dispositions": dispositions,
         "impact": impact_payload,
         "ledger": ledger,
         "quarantine": ([dict(row, side="old") for row in old_snapshot["diagnostics"]]
@@ -148,7 +164,15 @@ def execute(old_file: str = config.DEFAULT_OLD, new_file: str = config.DEFAULT_N
         "quarantine_new": new_snapshot["diagnostics"],
         "warnings": warnings,
         "reused": False,
+        "publish_status": "prepared",
     }
+    run["summary"] = history.summary_of(run)
+
+    # 发布闸：全部判定与导出依据已在内存算齐，落库前中断不得污染上一份结果，
+    # 也不消耗版本序号；上一条批次及其导出保持完整可读。
+    publish.assert_can_commit(run, fail_before_commit)
+    run["version_seq"] = store.next_version_seq()
+    run["publish_status"] = "committed"
     run["summary"] = history.summary_of(run)
     store.save_run(run)
     return run

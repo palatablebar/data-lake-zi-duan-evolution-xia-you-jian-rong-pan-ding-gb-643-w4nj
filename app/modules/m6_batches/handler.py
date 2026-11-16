@@ -12,7 +12,7 @@ router = APIRouter()
 
 ALLOWED_KEYS = {
     "old_file", "new_file", "refs_file", "base_file", "base_version_seq",
-    "effective_from", "effective_to", "params",
+    "effective_from", "effective_to", "params", "fail_before_commit",
 }
 
 
@@ -53,6 +53,7 @@ def create_run(payload: dict | None = None):
         effective_from=body.get("effective_from"),
         effective_to=body.get("effective_to"),
         params=params,
+        fail_before_commit=bool(body.get("fail_before_commit")),
     )
     return {
         "run_id": run["run_id"],

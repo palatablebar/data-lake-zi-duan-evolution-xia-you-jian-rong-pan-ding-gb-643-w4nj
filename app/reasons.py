@@ -38,11 +38,16 @@ CODES: dict[str, tuple[str, str]] = {
     "FIELD_DELETED_REFERENCED": ("删除仍被引用的字段", "break"),
     "MAPPING_CONFLICT": ("多个旧名映射到同一新名", "break"),
     "ALIAS_CYCLE": ("别名链成环", "break"),
+    "NAME_REOCCUPIED": ("过渡列名已被别的身份占用", "break"),
     # 引用图
     "REF_BROKEN": ("引用的字段不存在", "break"),
     "REF_ONE_SIDED": ("上下游只登记了单向", "break"),
     "REF_CYCLE": ("下游依赖成环", "break"),
     "REF_SELF_LOOP": ("下游依赖指向自己", "warn"),
+    # 消费方处置：同一结论在页面与导出里共用
+    "CONSUMER_KEEP_OLD": ("旧名可继续使用（经别名视图）", "warn"),
+    "CONSUMER_SWITCH": ("必须改接当前列名", "break"),
+    "CONSUMER_STOP": ("必须停下复核，禁止静默改接", "break"),
     # 版本与批次
     "VERSION_STALE": ("基于旧版本提交", "break"),
     "VERSION_OVERLAP": ("生效区间与已有版本重叠", "warn"),

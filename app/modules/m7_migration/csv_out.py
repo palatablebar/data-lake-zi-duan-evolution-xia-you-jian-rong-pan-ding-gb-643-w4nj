@@ -17,6 +17,11 @@ FIELD_HEADER = [
 
 REF_HEADER = ["consumer", "kind", "ref", "table", "column", "via", "field_id", "reason"]
 
+DISPOSITION_HEADER = [
+    "consumer", "kind", "action", "reason", "ref_total", "alias_count",
+    "direct_count", "blocking_count", "evidence",
+]
+
 
 def _buffer() -> tuple[io.StringIO, "csv.writer"]:
     buffer = io.StringIO()
@@ -55,10 +60,42 @@ def refs_csv(run: dict) -> str:
     writer.writerow(REF_HEADER)
     for item in resolution.get("resolved") or []:
         writer.writerow([item["consumer"], item["kind"], item["ref"], item["table"],
-                         item["column"], item["via"], str(item["field_id"] or ""), ""])
+                         item["column"], item["via"], str(item["field_id"] or ""),
+                         item.get("reason") or ""])
     for item in resolution.get("broken") or []:
         writer.writerow([item["consumer"], item["kind"], item["ref"], item["table"],
-                         item["column"], item.get("via") or "broken", "", "REF_BROKEN"])
+                         item["column"], item.get("via") or "broken", "",
+                         item.get("reason") or "REF_BROKEN"])
+    return buffer.getvalue()
+
+
+def _evidence_text(evidence: list[dict]) -> str:
+    """把逐条依据压成单元格文本；动作与依据和页面同源。"""
+    parts = []
+    for note in evidence or []:
+        ref = note.get("ref") or "—"
+        detail = note.get("detail") or ""
+        parts.append(f"{ref}[{note.get('via') or '—'}]:{detail}")
+    return " | ".join(parts)
+
+
+def dispositions_csv(run: dict) -> str:
+    """消费方处置导出：与 /mapping 页面和 /api/dispositions 共用同一份结论。"""
+    payload = run.get("dispositions") or {}
+    buffer, writer = _buffer()
+    writer.writerow(DISPOSITION_HEADER)
+    for row in payload.get("rows") or []:
+        writer.writerow([
+            row.get("consumer", ""),
+            row.get("kind", ""),
+            row.get("action", ""),
+            row.get("reason", ""),
+            str(row.get("ref_total", 0)),
+            str(row.get("alias_count", 0)),
+            str(row.get("direct_count", 0)),
+            str(row.get("blocking_count", 0)),
+            _evidence_text(row.get("evidence") or []),
+        ])
     return buffer.getvalue()
 
 
